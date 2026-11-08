@@ -49,17 +49,25 @@ jobs:
           /p:ContinuousIntegrationBuild=true
 
       - name: Publish to NuGet.org
-        run: >
-          dotnet nuget push ./artifacts/*.nupkg
-          --api-key ${{ secrets.NUGET_API_KEY }}
-          --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -Path ./artifacts -Filter *.nupkg)
+          if ($packages.Count -eq 0) { throw "No .nupkg files were produced in ./artifacts." }
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName `
+              --api-key "${{ secrets.NUGET_API_KEY }}" `
+              --source https://api.nuget.org/v3/index.json `
+              --skip-duplicate
+          }
 
-      # Optionally publish the symbol package explicitly (usually included with the nupkg push)
       - name: Publish symbol package (snupkg)
-        run: >
-          dotnet nuget push ./artifacts/*.snupkg
-          --api-key ${{ secrets.NUGET_API_KEY }}
-          --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
-        continue-on-error: true  # snupkg may sometimes be included automatically
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -Path ./artifacts -Filter *.snupkg -ErrorAction SilentlyContinue)
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName `
+              --api-key "${{ secrets.NUGET_API_KEY }}" `
+              --source https://api.nuget.org/v3/index.json `
+              --skip-duplicate
+          }
+        continue-on-error: true
