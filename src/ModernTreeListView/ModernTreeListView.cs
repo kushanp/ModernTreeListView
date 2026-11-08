@@ -44,6 +44,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     private TreeNode? _selectedNode;
     private int _selectedIndex = -1;
     private int _anchorIndex = -1;
+    private TreeNode? _anchorNode;
     private bool _multiSelect = true;
 
     private int _rowHeight = DefaultRowHeight;
@@ -89,6 +90,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     private object? _editingOriginalValue;
     private bool _inEndEdit;
     private bool _suppressFocusCommit; // true while a DateTimePicker dropdown is open
+    private bool _handlingMouseDown;
+    private bool _updatingScrollbars;
 
     // Display options
     private bool _showCheckBoxes;
@@ -102,69 +105,90 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     // These are hidden from the WinForms designer because this is a generic control
     // primarily configured via code / fluent API. Change values programmatically
     // or use ApplyTheme() with a TreeListTheme preset.
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color HeaderBackColor { get; set; }
+    private Color _headerBackColor;
+    private Color _headerForeColor;
+    private Color _rowBackColor;
+    private Color _alternatingRowBackColor;
+    private Color _selectionBackColor;
+    private Color _selectionForeColor;
+    private Color _gridLineColor;
+    private Color _expanderColor;
+    private Color _treeLineColor;
+    private Color _hoverBackColor;
+    private Color _editorBackColor;
+    private Color _editorForeColor;
+    private Color _focusCueColor;
+    private bool _showAlternatingRows = true;
+    private bool _showGridLines;
+    private bool _fullRowSelect = true;
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color HeaderForeColor { get; set; }
+    public Color HeaderBackColor { get => _headerBackColor; set => SetColor(ref _headerBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color RowBackColor { get; set; }
+    public Color HeaderForeColor { get => _headerForeColor; set => SetColor(ref _headerForeColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color AlternatingRowBackColor { get; set; }
+    public Color RowBackColor { get => _rowBackColor; set => SetColor(ref _rowBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color SelectionBackColor { get; set; }
+    public Color AlternatingRowBackColor { get => _alternatingRowBackColor; set => SetColor(ref _alternatingRowBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color SelectionForeColor { get; set; }
+    public Color SelectionBackColor { get => _selectionBackColor; set => SetColor(ref _selectionBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color GridLineColor { get; set; }
+    public Color SelectionForeColor { get => _selectionForeColor; set => SetColor(ref _selectionForeColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color ExpanderColor { get; set; }
+    public Color GridLineColor { get => _gridLineColor; set => SetColor(ref _gridLineColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color TreeLineColor { get; set; }
+    public Color ExpanderColor { get => _expanderColor; set => SetColor(ref _expanderColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color HoverBackColor { get; set; }
+    public Color TreeLineColor { get => _treeLineColor; set => SetColor(ref _treeLineColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color EditorBackColor { get; set; }
+    public Color HoverBackColor { get => _hoverBackColor; set => SetColor(ref _hoverBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color EditorForeColor { get; set; }
+    public Color EditorBackColor { get => _editorBackColor; set => SetColor(ref _editorBackColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public Color FocusCueColor { get; set; }
+    public Color EditorForeColor { get => _editorForeColor; set => SetColor(ref _editorForeColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public bool ShowAlternatingRows { get; set; } = true;
+    public Color FocusCueColor { get => _focusCueColor; set => SetColor(ref _focusCueColor, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public bool ShowGridLines { get; set; } = false;
+    public bool ShowAlternatingRows { get => _showAlternatingRows; set => SetVisualFlag(ref _showAlternatingRows, value); }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public bool FullRowSelect { get; set; } = true;
+    public bool ShowGridLines { get => _showGridLines; set => SetVisualFlag(ref _showGridLines, value); }
+
+    /// <summary>
+    /// When true (the default), the selection highlight covers the entire row.
+    /// When false, only the tree column is highlighted.
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool FullRowSelect { get => _fullRowSelect; set => SetVisualFlag(ref _fullRowSelect, value); }
 
     /// <summary>
     /// When true, draws connector lines between parent and child rows in the tree column.
@@ -297,16 +321,36 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
     private void OnVScroll(object? sender, ScrollEventArgs e)
     {
-        CancelEdit(); // editing position would be invalid
-        _vOffset = _vScrollBar.Value;
+        // WinForms raises Scroll before it assigns ScrollBar.Value, so Value is still
+        // the previous position here. NewValue is the position being applied.
+        CommitEditIfActive();
+        _vOffset = e.NewValue;
         _hoverRowIndex = -1;
+        if (_activeEditor != null)
+            PositionActiveEditor();
         Invalidate();
     }
 
     private void OnHScroll(object? sender, ScrollEventArgs e)
     {
-        CancelEdit();
-        _hOffset = _hScrollBar.Value;
+        CommitEditIfActive();
+        _hOffset = e.NewValue;
+        if (_activeEditor != null)
+            PositionActiveEditor();
+        Invalidate();
+    }
+
+    private void SetColor(ref Color field, Color value)
+    {
+        if (field == value) return;
+        field = value;
+        Invalidate();
+    }
+
+    private void SetVisualFlag(ref bool field, bool value)
+    {
+        if (field == value) return;
+        field = value;
         Invalidate();
     }
 
@@ -677,12 +721,13 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     private void LoadRoots(IEnumerable<TModel> roots)
     {
         CancelEdit();
+        bool hadSelection = _selectedNode != null || _selectedNodes.Count > 0;
         _rootNodes.Clear();
         _visibleRows.Clear();
         _selectedNodes.Clear();
         _selectedNode = null;
         _selectedIndex = -1;
-        _anchorIndex = -1;
+        SetAnchor(-1);
         _hoverRowIndex = -1;
 
         if (roots != null)
@@ -697,6 +742,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         RebuildVisibleRows();
         UpdateScrollbars();
         Invalidate();
+        if (hadSelection)
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RebuildVisibleRows()
@@ -718,7 +765,9 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             lineage.RemoveAt(lineage.Count - 1);
         }
 
-        // Prune selection: only nodes that are still visible remain selected
+        // Prune selection: only nodes that are still visible remain selected.
+        var focusedBefore = _selectedNode;
+        int selectedCountBefore = _selectedNodes.Count;
         if (_selectedNodes.Count > 0)
         {
             var visibleSet = new HashSet<TreeNode>();
@@ -742,8 +791,13 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             _selectedIndex = -1;
         }
 
-        if (_anchorIndex >= _visibleRows.Count)
-            _anchorIndex = _visibleRows.Count - 1;
+        // The anchor is a node, not a row number: sorting and filtering move rows.
+        // A hidden anchor keeps its node so the range origin returns when it is visible again.
+        if (_anchorNode != null)
+            _anchorIndex = _visibleRows.FindIndex(vr => vr.Node == _anchorNode);
+
+        if (focusedBefore != _selectedNode || selectedCountBefore != _selectedNodes.Count)
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void AppendVisible(TreeNode node, int level, List<bool> lineage)
@@ -844,6 +898,37 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
     // ==================== SCROLLING ====================
 
+    private int GetRowsViewportHeight()
+    {
+        int height = Math.Max(0, ClientSize.Height - _headerHeight);
+        if (_hScrollBar is { Visible: true })
+            height = Math.Max(0, height - _hScrollBar.Height);
+        return height;
+    }
+
+    private int GetColumnsViewportWidth()
+    {
+        int width = ClientSize.Width;
+        if (_vScrollBar is { Visible: true })
+            width = Math.Max(0, width - _vScrollBar.Width);
+        return width;
+    }
+
+    private int MeasureContentWidth(int viewportWidth)
+    {
+        if (_columns.Count == 0) return 0;
+
+        int fixedCount = _autoFillLastColumn ? _columns.Count - 1 : _columns.Count;
+        int others = 0;
+        for (int c = 0; c < fixedCount; c++)
+            others += _columns[c].Width;
+
+        if (!_autoFillLastColumn)
+            return others;
+
+        return others + Math.Max(_columns[^1].Width, viewportWidth - others);
+    }
+
     private int GetColumnWidth(int columnIndex)
     {
         var col = _columns[columnIndex];
@@ -853,7 +938,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             for (int c = 0; c < _columns.Count - 1; c++)
                 others += _columns[c].Width;
 
-            int avail = ClientSize.Width - (_vScrollBar?.Visible == true ? _vScrollBar.Width : 0) - others;
+            int avail = GetColumnsViewportWidth() - others;
             return Math.Max(col.Width, avail);
         }
         return col.Width;
@@ -869,29 +954,63 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
     private void UpdateScrollbars()
     {
-        if (_vScrollBar == null || _hScrollBar == null) return;
+        if (_updatingScrollbars || _vScrollBar == null || _hScrollBar == null) return;
+        _updatingScrollbars = true;
+        try
+        {
+            UpdateScrollbarsCore();
+        }
+        finally
+        {
+            _updatingScrollbars = false;
+        }
+    }
+
+    private void UpdateScrollbarsCore()
+    {
 
         int clientWidth = ClientSize.Width;
         int clientHeight = ClientSize.Height;
         int header = _headerHeight;
-        int viewHeight = Math.Max(0, clientHeight - header);
-
-        // Vertical
+        int vBarW = _vScrollBar.Width;
+        int hBarH = _hScrollBar.Height;
         int totalHeight = _visibleRows.Count * _rowHeight;
-        bool needV = totalHeight > viewHeight && viewHeight > 0;
+
+        // Decide which bars are needed before showing them. A horizontal bar steals
+        // row space (and can force the vertical bar); a vertical bar steals column space.
+        int rowsHeight = Math.Max(0, clientHeight - header);
+        int colsWidth = clientWidth;
+
+        bool needV = totalHeight > rowsHeight && rowsHeight > 0;
+        if (needV)
+            colsWidth = Math.Max(0, clientWidth - vBarW);
+
+        int totalWidth = MeasureContentWidth(colsWidth);
+        bool needH = totalWidth > colsWidth && colsWidth > 0;
+        if (needH)
+        {
+            rowsHeight = Math.Max(0, rowsHeight - hBarH);
+            if (!needV && totalHeight > rowsHeight && rowsHeight > 0)
+            {
+                needV = true;
+                colsWidth = Math.Max(0, clientWidth - vBarW);
+                totalWidth = MeasureContentWidth(colsWidth);
+                needH = totalWidth > colsWidth && colsWidth > 0;
+            }
+        }
 
         _vScrollBar.Visible = needV;
         if (needV)
         {
-            _vScrollBar.Left = clientWidth - _vScrollBar.Width;
+            _vScrollBar.Left = clientWidth - vBarW;
             _vScrollBar.Top = header;
-            _vScrollBar.Height = viewHeight;
+            _vScrollBar.Height = Math.Max(0, rowsHeight);
 
-            int large = Math.Max(_rowHeight, viewHeight);
+            int large = Math.Max(_rowHeight, Math.Max(1, rowsHeight));
             _vScrollBar.LargeChange = large;
             _vScrollBar.SmallChange = _rowHeight;
 
-            int maxVal = Math.Max(0, totalHeight - viewHeight);
+            int maxVal = Math.Max(0, totalHeight - rowsHeight);
             _vScrollBar.Maximum = maxVal + large - 1;
             _vScrollBar.Value = Math.Min(_vOffset, maxVal);
             _vOffset = _vScrollBar.Value;
@@ -901,23 +1020,18 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             _vOffset = 0;
         }
 
-        // Horizontal (computed after vertical so AutoFillLastColumn accounts for the vertical scrollbar)
-        int totalWidth = GetTotalColumnsWidth();
-        bool needH = totalWidth > clientWidth && clientWidth > 0;
-
         _hScrollBar.Visible = needH;
         if (needH)
         {
-            int bottom = clientHeight - _hScrollBar.Height;
             _hScrollBar.Left = 0;
-            _hScrollBar.Top = bottom;
-            _hScrollBar.Width = clientWidth - (needV ? _vScrollBar.Width : 0);
+            _hScrollBar.Top = clientHeight - hBarH;
+            _hScrollBar.Width = Math.Max(0, colsWidth);
 
-            int large = Math.Max(10, clientWidth / 3);
+            int large = Math.Max(10, Math.Max(1, colsWidth / 3));
             _hScrollBar.LargeChange = large;
             _hScrollBar.SmallChange = 20;
 
-            int maxVal = Math.Max(0, totalWidth - clientWidth);
+            int maxVal = Math.Max(0, totalWidth - colsWidth);
             _hScrollBar.Maximum = maxVal + large - 1;
             _hScrollBar.Value = Math.Min(_hOffset, maxVal);
             _hOffset = _hScrollBar.Value;
@@ -935,7 +1049,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         int rowTop = rowIndex * _rowHeight;
         int rowBottom = rowTop + _rowHeight;
         int viewTop = _vOffset;
-        int viewHeight = Math.Max(0, ClientSize.Height - _headerHeight);
+        int viewHeight = GetRowsViewportHeight();
         int viewBottom = viewTop + viewHeight;
 
         if (rowTop < viewTop)
@@ -944,7 +1058,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         }
         else if (rowBottom > viewBottom)
         {
-            _vOffset = rowBottom - viewHeight;
+            _vOffset = Math.Max(0, rowBottom - viewHeight);
         }
 
         if (_vScrollBar.Visible)
@@ -1046,7 +1160,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         }
 
         var node = _visibleRows[rowIndex].Node;
-        _anchorIndex = rowIndex;
+        SetAnchor(rowIndex);
 
         bool unchanged = _selectedNode == node && _selectedIndex == rowIndex &&
                          _selectedNodes.Count == 1 && _selectedNodes.Contains(node);
@@ -1067,7 +1181,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         if (rowIndex < 0 || rowIndex >= _visibleRows.Count) return;
 
         var node = _visibleRows[rowIndex].Node;
-        _anchorIndex = rowIndex;
+        SetAnchor(rowIndex);
 
         if (_selectedNodes.Add(node))
         {
@@ -1111,7 +1225,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         _selectedNodes.UnionWith(newSet);
         _selectedNode = newFocused;
         _selectedIndex = focusIndex;
-        _anchorIndex = anchorIndex;
+        SetAnchor(anchorIndex);
         _currentEditColumnHint = 0;
 
         if (changed)
@@ -1132,7 +1246,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             _selectedNode = _visibleRows[0].Node;
             _selectedIndex = 0;
         }
-        if (_anchorIndex < 0) _anchorIndex = 0;
+        if (_anchorIndex < 0) SetAnchor(0);
 
         SelectionChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
@@ -1182,33 +1296,64 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         _selectedNodes.Clear();
         _selectedNode = null;
         _selectedIndex = -1;
-        _anchorIndex = -1;
+        SetAnchor(-1);
         SelectionChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
     }
 
-    private TreeNode? FindNode(TModel model)
+    private void SetAnchor(int rowIndex)
     {
-        foreach (var root in _rootNodes)
+        if (rowIndex >= 0 && rowIndex < _visibleRows.Count)
         {
-            var found = FindNodeRecursive(root, model);
-            if (found != null) return found;
+            _anchorIndex = rowIndex;
+            _anchorNode = _visibleRows[rowIndex].Node;
         }
-        return null;
+        else
+        {
+            _anchorIndex = -1;
+            _anchorNode = null;
+        }
     }
 
-    private TreeNode? FindNodeRecursive(TreeNode node, TModel model)
+    private TreeNode? FindNode(TModel model)
     {
-        if (EqualityComparer<TModel>.Default.Equals(node.Model, model))
+        TreeNode? equalMatch = null;
+        foreach (var root in _rootNodes)
+        {
+            var byReference = FindNodeRecursive(root, model, ref equalMatch);
+            if (byReference != null) return byReference;
+        }
+        return equalMatch;
+    }
+
+    /// <summary>
+    /// Reference types match the exact instance first, so two records with the same values
+    /// stay independently addressable. A value-equal copy is still found when no instance matches.
+    /// Value types compare with <see cref="EqualityComparer{T}"/>.
+    /// </summary>
+    private TreeNode? FindNodeRecursive(TreeNode node, TModel model, ref TreeNode? equalMatch)
+    {
+        if (typeof(TModel).IsValueType)
+        {
+            if (EqualityComparer<TModel>.Default.Equals(node.Model, model))
+                return node;
+        }
+        else if (ReferenceEquals(node.Model, model))
+        {
             return node;
+        }
+        else if (equalMatch == null && EqualityComparer<TModel>.Default.Equals(node.Model, model))
+        {
+            equalMatch = node;
+        }
 
         // Only search loaded children (avoids forcing load of entire tree)
         if (node.ChildrenLoaded)
         {
             foreach (var child in node.Children)
             {
-                var found = FindNodeRecursive(child, model);
-                if (found != null) return found;
+                var byReference = FindNodeRecursive(child, model, ref equalMatch);
+                if (byReference != null) return byReference;
             }
         }
         return null;
@@ -1391,7 +1536,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
     /// <summary>
     /// Begins in-place editing for the cell at the given visible row and column index.
-    /// The default editor is a TextBox; DateTime values get a DateTimePicker, bool values get a CheckBox.
+    /// The default editor is a TextBox; DateTime and bool values get a DateTimePicker or CheckBox.
+    /// Null cells use <see cref="TreeListColumn{TModel}.DataType"/> to choose the same editors.
     /// Columns can supply a custom editor via <see cref="TreeListColumn{TModel}.EditorFactory"/>.
     /// Commit with Enter or by losing focus; cancel with Escape. Tab / Shift+Tab move to the next / previous editable cell.
     /// </summary>
@@ -1403,7 +1549,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         var column = _columns[columnIndex];
         if (!column.IsEditable) return;
 
-        CancelEdit();
+        // Keep a value already typed into another cell.
+        if (!CommitEdit(restoreFocus: false)) return;
 
         var vrow = _visibleRows[rowIndex];
         var node = vrow.Node;
@@ -1417,24 +1564,9 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
         var editor = column.EditorFactory != null
             ? column.EditorFactory(node.Model, currentValue)
-            : CreateDefaultEditor(column, node.Model, currentValue);
+            : CreateDefaultEditor(column, currentValue);
         if (editor == null) { EndEdit(); return; }
 
-        var cellRect = GetCellRectangle(rowIndex, columnIndex);
-        if (columnIndex == 0)
-        {
-            // Do not cover the expander / checkbox / icon area of the tree cell
-            var layout = GetTreeCellLayout(vrow, cellRect);
-            int delta = Math.Max(0, layout.ContentLeft - cellRect.Left);
-            cellRect.X += delta;
-            cellRect.Width = Math.Max(20, cellRect.Width - delta);
-        }
-
-        // Inset slightly for modern look
-        cellRect.Inflate(-1, -1);
-        if (cellRect.Width < 20) cellRect.Width = 20;
-
-        editor.Bounds = cellRect;
         editor.Font = Font;
         editor.Tag = new EditTag(column, node, currentValue);
 
@@ -1442,6 +1574,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         _suppressFocusCommit = false;
         Controls.Add(editor);
         editor.BringToFront();
+        PositionActiveEditor();
         editor.Focus();
 
         if (editor is TextBox tb)
@@ -1451,6 +1584,9 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         {
             dtp.DropDown += Editor_DropDown;
             dtp.CloseUp += Editor_CloseUp;
+            // Checked is unreliable until the picker has a handle. Re-apply the null state.
+            if (dtp.ShowCheckBox && _editingOriginalValue is not DateTime)
+                dtp.Checked = false;
         }
 
         editor.PreviewKeyDown += Editor_PreviewKeyDown;
@@ -1460,68 +1596,123 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         Invalidate(); // in case we want to highlight editing cell
     }
 
-    private Control CreateDefaultEditor(TreeListColumn<TModel> column, TModel model, object? currentValue)
+    private void PositionActiveEditor()
     {
-        // Improved default editor with basic type awareness for a better out-of-the-box experience.
-        // DateTime and DateTime? -> DateTimePicker (excellent for dates)
-        // bool / bool? -> CheckBox
-        // Everything else (strings, numbers, etc.) -> TextBox.
+        if (_activeEditor == null || _editingRowIndex < 0 || _editingColIndex < 0) return;
+        if (_editingRowIndex >= _visibleRows.Count) return;
+
+        var cellRect = GetCellRectangle(_editingRowIndex, _editingColIndex);
+        if (cellRect.IsEmpty) return;
+
+        if (_editingColIndex == 0)
+        {
+            // Do not cover the expander / checkbox / icon area of the tree cell
+            var layout = GetTreeCellLayout(_visibleRows[_editingRowIndex], cellRect);
+            int delta = Math.Max(0, layout.ContentLeft - cellRect.Left);
+            cellRect.X += delta;
+            cellRect.Width = Math.Max(20, cellRect.Width - delta);
+        }
+
+        // Inset slightly for modern look
+        cellRect.Inflate(-1, -1);
+        if (cellRect.Width < 20) cellRect.Width = 20;
+        _activeEditor.Bounds = cellRect;
+    }
+
+    private Control CreateDefaultEditor(TreeListColumn<TModel> column, object? currentValue)
+    {
+        // DateTime and DateTime? -> DateTimePicker. Null values need TreeListColumn.DataType,
+        // because a null cell does not carry a runtime type. Nullable dates can be cleared.
+        // bool / bool? -> CheckBox. Everything else -> TextBox.
         // Keyboard: arrows, Home, End etc. work inside the editors because we only intercept Enter/Escape/Tab.
 
-        // DateTime (non-nullable or nullable with value)
-        if (currentValue is DateTime dtVal)
+        if (IsDateTimeLike(currentValue, column.DataType))
         {
-            return new DateTimePicker
+            bool nullable = column.DataType != null && Nullable.GetUnderlyingType(column.DataType) == typeof(DateTime);
+            var dtp = new DateTimePicker
             {
                 Format = DateTimePickerFormat.Short,
-                Value = dtVal,
+                ShowCheckBox = nullable,
                 CalendarMonthBackground = EditorBackColor,
                 CalendarForeColor = EditorForeColor
             };
+            if (currentValue is DateTime dtVal)
+            {
+                dtp.Value = dtVal;
+                dtp.Checked = true;
+            }
+            else
+            {
+                dtp.Value = DateTime.Today;
+                dtp.Checked = false;
+            }
+            return dtp;
         }
 
-        // bool
-        if (currentValue is bool boolVal)
+        if (IsBoolLike(currentValue, column.DataType))
         {
-            return new CheckBox
+            bool nullable = column.DataType != null && Nullable.GetUnderlyingType(column.DataType) == typeof(bool);
+            var cb = new CheckBox
             {
-                Checked = boolVal,
                 BackColor = EditorBackColor,
                 ForeColor = EditorForeColor,
-                Text = column.Title,
-                AutoSize = true
+                CheckAlign = ContentAlignment.MiddleCenter,
+                TextAlign = ContentAlignment.MiddleCenter,
+                AutoSize = false,
+                ThreeState = nullable
             };
+            if (currentValue is bool boolVal)
+                cb.Checked = boolVal;
+            else if (nullable)
+                cb.CheckState = CheckState.Indeterminate;
+            return cb;
         }
 
-        // Default: TextBox (great for strings, numbers, GUIDs, etc.)
-        // Right-align for common numeric types (detected from current value for a nicer look).
+        // Default: TextBox (strings, numbers, GUIDs, etc.)
         var text = currentValue?.ToString() ?? string.Empty;
-        bool numeric = IsNumericType(currentValue);
+        var align = column.Alignment;
+        if (align == HorizontalAlignment.Left && (IsNumericType(currentValue) || IsNumericType(column.DataType)))
+            align = HorizontalAlignment.Right;
 
-        var tb = new TextBox
+        return new TextBox
         {
             Text = text,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = EditorBackColor,
             ForeColor = EditorForeColor,
             Padding = new Padding(2),
-            TextAlign = numeric ? HorizontalAlignment.Right : HorizontalAlignment.Left
+            TextAlign = align
         };
-
-        return tb;
     }
 
-    private static bool IsNumericType(object? value)
+    private static bool IsDateTimeLike(object? value, Type? dataType)
     {
-        if (value == null) return false;
-        var t = value.GetType();
-        t = Nullable.GetUnderlyingType(t) ?? t;
-        return t == typeof(sbyte) || t == typeof(byte) ||
-               t == typeof(short) || t == typeof(ushort) ||
-               t == typeof(int) || t == typeof(uint) ||
-               t == typeof(long) || t == typeof(ulong) ||
-               t == typeof(float) || t == typeof(double) ||
-               t == typeof(decimal);
+        if (value is DateTime) return true;
+        if (dataType == null) return false;
+        var t = Nullable.GetUnderlyingType(dataType) ?? dataType;
+        return t == typeof(DateTime);
+    }
+
+    private static bool IsBoolLike(object? value, Type? dataType)
+    {
+        if (value is bool) return true;
+        if (dataType == null) return false;
+        var t = Nullable.GetUnderlyingType(dataType) ?? dataType;
+        return t == typeof(bool);
+    }
+
+    private static bool IsNumericType(object? value) => value != null && IsNumericType(value.GetType());
+
+    private static bool IsNumericType(Type? type)
+    {
+        if (type == null) return false;
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        return type == typeof(sbyte) || type == typeof(byte) ||
+               type == typeof(short) || type == typeof(ushort) ||
+               type == typeof(int) || type == typeof(uint) ||
+               type == typeof(long) || type == typeof(ulong) ||
+               type == typeof(float) || type == typeof(double) ||
+               type == typeof(decimal);
     }
 
     private void Editor_PreviewKeyDown(object? sender, PreviewKeyDownEventArgs e)
@@ -1556,8 +1747,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             int col = _editingColIndex;
             int direction = e.Shift ? -1 : +1;
 
-            CommitEdit();
-            MoveToAdjacentEditableCell(row, col, direction);
+            if (CommitEdit())
+                MoveToAdjacentEditableCell(row, col, direction);
         }
     }
 
@@ -1574,60 +1765,86 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
     private void Editor_LostFocus(object? sender, EventArgs e)
     {
-        if (_suppressFocusCommit) return;
+        if (_suppressFocusCommit || _inEndEdit || _activeEditor == null || _handlingMouseDown) return;
 
-        // Commit on focus lost (standard for excellent editing experience)
-        if (_activeEditor != null)
+        var editor = _activeEditor;
+        // Focus moving into a child of a composite editor also raises LostFocus.
+        // Wait until the message pump settles, then commit only if focus really left.
+        if (editor.HasChildren && IsHandleCreated && !IsDisposed)
         {
-            CommitEdit();
+            BeginInvoke(new MethodInvoker(() =>
+            {
+                if (IsDisposed || _activeEditor != editor || editor.IsDisposed || editor.ContainsFocus)
+                    return;
+                CommitEdit(restoreFocus: false);
+            }));
+            return;
         }
+
+        // Do not take focus back; the user clicked some other control (or the form is closing).
+        CommitEdit(restoreFocus: false);
     }
 
-    private void CommitEdit()
+    /// <summary>
+    /// Applies the open editor. Returns false when a <see cref="CellEditCommitted"/> handler
+    /// sets <see cref="CellEditEventArgs{TModel}.Cancel"/>; the editor stays open so the value
+    /// can be corrected. Does not raise <see cref="CellEditCanceled"/> in that case.
+    /// </summary>
+    private bool CommitEdit(bool restoreFocus = true)
     {
-        if (_inEndEdit) return;
-        if (_activeEditor == null || _editingNode == null || _editingColIndex < 0) { EndEdit(); return; }
+        if (_inEndEdit) return false;
+        if (_activeEditor == null || _editingNode == null || _editingColIndex < 0)
+        {
+            if (_activeEditor != null)
+                EndEdit(restoreFocus);
+            return true;
+        }
 
         _inEndEdit = true;
-
-        var column = _columns[_editingColIndex];
-        var model = _editingNode.Model;
-
-        object? newValue = ExtractValueFromEditor(_activeEditor, column);
-
-        var args = new CellEditEventArgs<TModel>(
-            model,
-            column,
-            newValue,
-            _editingOriginalValue,
-            _editingRowIndex,
-            _editingColIndex);
-
+        bool accepted = false;
         try
         {
+            var column = _columns[_editingColIndex];
+            var model = _editingNode.Model;
+            object? newValue = ExtractValueFromEditor(_activeEditor, column);
+
+            var args = new CellEditEventArgs<TModel>(
+                model,
+                column,
+                newValue,
+                _editingOriginalValue,
+                _editingRowIndex,
+                _editingColIndex);
+
             CellEditCommitted?.Invoke(this, args);
 
-            if (!args.Cancel)
-            {
-                // Apply via registered setter if present (user is responsible for updating model)
-                _setCellValue?.Invoke(model, column, newValue);
+            if (args.Cancel)
+                return false;
 
-                // If the edit was on a visible column, we may want to refresh row
-                InvalidateRow(_editingRowIndex);
-            }
-            else
-            {
-                CellEditCanceled?.Invoke(this, args);
-            }
+            // Apply via registered setter if present (user is responsible for updating model)
+            _setCellValue?.Invoke(model, column, args.ProposedValue);
+            InvalidateRow(_editingRowIndex);
+            accepted = true;
+            return true;
         }
         finally
         {
-            EndEdit();
+            if (accepted)
+                EndEdit(restoreFocus);
+            else if (_activeEditor != null && !_activeEditor.IsDisposed)
+                _activeEditor.Focus();
+
             _inEndEdit = false;
         }
     }
 
-    private void CancelEdit()
+    private bool CommitEditIfActive(bool restoreFocus = true)
+    {
+        if (_activeEditor == null) return true;
+        return CommitEdit(restoreFocus);
+    }
+
+    private void CancelEdit(bool restoreFocus = true)
     {
         if (_inEndEdit) return;
         if (_activeEditor == null) return;
@@ -1635,7 +1852,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         _inEndEdit = true;
         try
         {
-            if (_editingNode != null && _editingColIndex >= 0)
+            if (_editingNode != null && _editingColIndex >= 0 && _editingColIndex < _columns.Count)
             {
                 var args = new CellEditEventArgs<TModel>(
                     _editingNode.Model,
@@ -1651,30 +1868,34 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         }
         finally
         {
-            EndEdit();
+            EndEdit(restoreFocus);
             _inEndEdit = false;
         }
     }
 
-    private void EndEdit()
+    private void EndEdit(bool restoreFocus = true)
     {
         if (_activeEditor != null)
         {
-            _activeEditor.LostFocus -= Editor_LostFocus;
-            _activeEditor.KeyDown -= Editor_KeyDown;
-            _activeEditor.PreviewKeyDown -= Editor_PreviewKeyDown;
+            var editor = _activeEditor;
+            editor.LostFocus -= Editor_LostFocus;
+            editor.KeyDown -= Editor_KeyDown;
+            editor.PreviewKeyDown -= Editor_PreviewKeyDown;
 
-            if (_activeEditor is DateTimePicker dtp)
+            if (editor is DateTimePicker dtp)
             {
                 dtp.DropDown -= Editor_DropDown;
                 dtp.CloseUp -= Editor_CloseUp;
             }
 
-            if (Controls.Contains(_activeEditor))
-                Controls.Remove(_activeEditor);
-
-            _activeEditor.Dispose();
             _activeEditor = null;
+
+            if (!editor.IsDisposed)
+            {
+                if (Controls.Contains(editor))
+                    Controls.Remove(editor);
+                editor.Dispose();
+            }
         }
 
         _editingRowIndex = -1;
@@ -1683,7 +1904,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         _editingOriginalValue = null;
         _suppressFocusCommit = false;
 
-        Focus();
+        if (restoreFocus && IsHandleCreated && !IsDisposed && !Disposing)
+            Focus();
         Invalidate();
     }
 
@@ -1696,8 +1918,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         return editor switch
         {
             TextBox tb => tb.Text,
-            CheckBox cb => cb.Checked,
-            DateTimePicker dtp => dtp.Value,
+            CheckBox cb => cb.ThreeState && cb.CheckState == CheckState.Indeterminate ? null : cb.Checked,
+            DateTimePicker dtp => dtp.ShowCheckBox && !dtp.Checked ? null : dtp.Value,
             ComboBox cmb => cmb.SelectedItem ?? cmb.Text,
             _ => editor.Text
         };
@@ -1718,8 +1940,9 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
         int r = fromRow;
         int c = fromCol;
+        int guard = _columns.Count * Math.Max(1, _visibleRows.Count);
 
-        while (true)
+        while (guard-- > 0)
         {
             c += direction;
             if (c >= _columns.Count) { c = 0; r++; }
@@ -1734,8 +1957,6 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 BeginEdit(r, c);
                 return;
             }
-
-            // Terminates: r strictly progresses every _columns.Count iterations
         }
     }
 
@@ -1970,14 +2191,15 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         for (int r = firstRow; r < _visibleRows.Count && rowPixelY < clientHeight; r++)
         {
             var vrow = _visibleRows[r];
-            bool isSelected = _selectedNodes.Contains(vrow.Node);
-            bool isHover = (r == _hoverRowIndex) && !isSelected;
+            bool rowSelected = _selectedNodes.Contains(vrow.Node);
+            bool paintFullSelection = rowSelected && FullRowSelect;
+            bool isHover = (r == _hoverRowIndex) && !rowSelected;
             bool isAlt = ShowAlternatingRows && (r % 2 == 1);
 
             var rowRect = new Rectangle(0, rowPixelY, clientWidth, _rowHeight);
 
-            // Row background (selection > hover > alternating > normal)
-            Color bg = isSelected ? SelectionBackColor :
+            // Row background (full-row selection > hover > alternating > normal)
+            Color bg = paintFullSelection ? SelectionBackColor :
                        isHover ? HoverBackColor :
                        isAlt ? AlternatingRowBackColor : RowBackColor;
             using (var b = new SolidBrush(bg))
@@ -1992,16 +2214,23 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 var col = _columns[c];
                 int colW = GetColumnWidth(c);
                 var cellRect = new Rectangle(cellX, rowPixelY, colW, _rowHeight);
+                bool cellSelected = rowSelected && (FullRowSelect || c == 0);
 
                 if (cellRect.Right > 0 && cellRect.Left < clientWidth)
                 {
+                    if (cellSelected && !FullRowSelect)
+                    {
+                        using var sel = new SolidBrush(SelectionBackColor);
+                        g.FillRectangle(sel, cellRect);
+                    }
+
                     if (c == 0)
                     {
-                        DrawTreeCell(g, cellRect, vrow, col, isSelected);
+                        DrawTreeCell(g, cellRect, vrow, col, cellSelected);
                     }
                     else
                     {
-                        DrawDataCell(g, cellRect, vrow, col, isSelected);
+                        DrawDataCell(g, cellRect, vrow, col, cellSelected);
                     }
                 }
 
@@ -2184,15 +2413,35 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        Focus();
 
-        CancelEdit(); // any pending edit commit/cancel before new action
+        // LostFocus commits clicks that leave the tree. This flag tells it to leave a click
+        // on the tree itself to the logic below, so a veto is raised once.
+        _handlingMouseDown = true;
+        try
+        {
+            Focus();
+            if (_activeEditor != null && !_suppressFocusCommit && !CommitEdit(restoreFocus: false))
+                return;
+            HandleMouseDown(e);
+        }
+        finally
+        {
+            _handlingMouseDown = false;
+        }
+    }
+
+    private void HandleMouseDown(MouseEventArgs e)
+    {
 
         var hit = HitTest(e.X, e.Y);
+        // The second click of a double-click repeats MouseDown. Expander, checkbox, and header
+        // actions must run once; OnMouseDoubleClick handles divider auto-fit and cell edit.
+        bool repeatedClick = e.Clicks > 1;
 
         if (hit.IsHeader)
         {
-            HandleHeaderMouseDown(e, hit);
+            if (!repeatedClick)
+                HandleHeaderMouseDown(e, hit);
             return;
         }
 
@@ -2202,14 +2451,18 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
             if (hit.IsExpander)
             {
-                ToggleExpand(vrow.Node);
+                if (!repeatedClick)
+                    ToggleExpand(vrow.Node);
                 return;
             }
 
             if (hit.IsCheckBox)
             {
-                SetCheckedCore(vrow.Node, !vrow.Node.IsChecked);
-                InvalidateRow(hit.RowIndex);
+                if (!repeatedClick)
+                {
+                    SetCheckedCore(vrow.Node, !vrow.Node.IsChecked);
+                    InvalidateRow(hit.RowIndex);
+                }
                 return;
             }
 
@@ -2255,6 +2508,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 if (Math.Abs(e.X - x) <= ResizeGripWidth)
                 {
                     _resizingColumnIndex = -1;
+                    Capture = false;
                     Cursor = Cursors.Default;
                     AutoFitColumn(c);
                     return;
@@ -2282,7 +2536,10 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         {
             _resizingColumnIndex = hit.ColumnIndex;
             _resizeStartX = e.X;
-            _resizeStartWidth = GetColumnWidth(hit.ColumnIndex);
+            // Store the configured width. The displayed width of an auto-filled last
+            // column is stretched, and writing that back would inflate Width permanently.
+            _resizeStartWidth = _columns[hit.ColumnIndex].Width;
+            Capture = true;
             Cursor = Cursors.VSplit;
         }
         else
@@ -2420,6 +2677,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         if (_resizingColumnIndex >= 0)
         {
             _resizingColumnIndex = -1;
+            Capture = false;
             Cursor = Cursors.Default;
             UpdateScrollbars();
             Invalidate();
@@ -2435,11 +2693,14 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
         {
             if (_hScrollBar.Visible)
             {
-                CancelEdit();
-                int maxVal = Math.Max(0, GetTotalColumnsWidth() - ClientSize.Width);
+                CommitEditIfActive();
+                int viewWidth = Math.Max(1, GetColumnsViewportWidth());
+                int maxVal = Math.Max(0, GetTotalColumnsWidth() - viewWidth);
                 _hOffset = Math.Clamp(_hOffset - Math.Sign(e.Delta) * 48, 0, maxVal);
                 _hScrollBar.Value = Math.Min(_hOffset, maxVal);
                 _hoverRowIndex = -1;
+                if (_activeEditor != null)
+                    PositionActiveEditor();
                 Invalidate();
             }
             return;
@@ -2447,9 +2708,10 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
 
         if (_vScrollBar.Visible)
         {
-            CancelEdit();
+            CommitEditIfActive();
+            int viewHeight = Math.Max(1, GetRowsViewportHeight());
             int newVal = _vOffset - (e.Delta / 2); // natural feel
-            int maxVal = Math.Max(0, (_visibleRows.Count * _rowHeight) - Math.Max(1, ClientSize.Height - _headerHeight));
+            int maxVal = Math.Max(0, (_visibleRows.Count * _rowHeight) - viewHeight);
             _vOffset = Math.Clamp(newVal, 0, maxVal);
 
             if (_vScrollBar.Visible)
@@ -2458,6 +2720,8 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
             }
 
             _hoverRowIndex = -1;
+            if (_activeEditor != null)
+                PositionActiveEditor();
             Invalidate();
         }
     }
@@ -2592,6 +2856,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 break;
 
             case Keys.Multiply:
+            case Keys.D8 when e.Shift && !e.Control && !e.Alt: // main-keyboard *
                 if (_selectedIndex >= 0)
                 {
                     ExpandSubtree(_visibleRows[_selectedIndex].Node.Model);
@@ -2601,6 +2866,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 break;
 
             case Keys.Add:
+            case Keys.Oemplus: // main-keyboard = / +
                 if (_selectedIndex >= 0)
                 {
                     var node = _visibleRows[_selectedIndex].Node;
@@ -2612,6 +2878,7 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
                 break;
 
             case Keys.Subtract:
+            case Keys.OemMinus: // main-keyboard -
                 if (_selectedIndex >= 0)
                 {
                     var node = _visibleRows[_selectedIndex].Node;
@@ -2712,7 +2979,20 @@ public sealed class ModernTreeListView<TModel> : Control where TModel : notnull
     {
         if (disposing)
         {
-            _activeEditor?.Dispose();
+            // Unhook before the editor is disposed. Disposing it here would raise LostFocus
+            // and try to commit while this control is going away. base.Dispose releases children.
+            if (_activeEditor != null)
+            {
+                _activeEditor.LostFocus -= Editor_LostFocus;
+                _activeEditor.KeyDown -= Editor_KeyDown;
+                _activeEditor.PreviewKeyDown -= Editor_PreviewKeyDown;
+                if (_activeEditor is DateTimePicker dtp)
+                {
+                    dtp.DropDown -= Editor_DropDown;
+                    dtp.CloseUp -= Editor_CloseUp;
+                }
+                _activeEditor = null;
+            }
             _toolTip?.Dispose();
             // Scrollbars are disposed by Controls collection
         }
@@ -2834,6 +3114,15 @@ public sealed class TreeListColumn<TModel>
     /// Whether cells in this column can be edited in place. Default: true.
     /// </summary>
     public bool IsEditable { get; set; } = true;
+
+    /// <summary>
+    /// Optional runtime type of the cell value. Used to choose a default editor when the
+    /// current value is null, which has no runtime type of its own.
+    /// <see cref="DateTime"/> and <see cref="Nullable{T}"/> of <see cref="DateTime"/> use a
+    /// <see cref="DateTimePicker"/> (nullable dates show a checkbox and can be cleared).
+    /// <see cref="bool"/> and <c>bool?</c> use a <see cref="CheckBox"/>.
+    /// </summary>
+    public Type? DataType { get; set; }
 
     /// <summary>
     /// Optional factory creating a custom in-place editor for this column.

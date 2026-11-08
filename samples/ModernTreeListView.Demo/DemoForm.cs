@@ -172,13 +172,15 @@ public sealed class DemoForm : Form
             // Numeric column: right-aligned, formatted, edited with the default TextBox (right-aligned automatically).
             .AddColumn("Headcount", m => m.Type is "Person" or "Contractor" ? null : m.Headcount, width: 95, configure: c =>
             {
+                c.DataType = typeof(int);
                 c.Alignment = HorizontalAlignment.Right;
                 c.Formatter = v => v is int i ? i.ToString("N0") : "";
             })
 
-            // DateTime column: gets a DateTimePicker editor automatically.
+            // DateTime? column: DataType keeps the picker when the cell is null (departments and teams).
             .AddColumn("Last Active", m => m.LastActive, width: 145, configure: c =>
             {
+                c.DataType = typeof(DateTime?);
                 c.Alignment = HorizontalAlignment.Right;
                 c.Formatter = v => v is DateTime dt ? dt.ToString("yyyy-MM-dd HH:mm") : "";
             })
@@ -186,6 +188,7 @@ public sealed class DemoForm : Form
             // Bool column: gets a CheckBox editor automatically. AutoFillLastColumn stretches it.
             .AddColumn("Active", m => m.Active, width: 80, configure: c =>
             {
+                c.DataType = typeof(bool);
                 c.Alignment = HorizontalAlignment.Center;
                 c.Formatter = v => v is bool b ? (b ? "Yes" : "No") : "";
             });
@@ -209,6 +212,8 @@ public sealed class DemoForm : Form
                     => model with { Headcount = hc },
                 "Last Active" when value is DateTime dt
                     => model with { LastActive = dt },
+                "Last Active" when value is null
+                    => model with { LastActive = null },
                 "Active" when value is bool b
                     => model with { Active = b },
                 _ => null
