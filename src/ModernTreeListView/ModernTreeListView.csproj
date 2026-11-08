@@ -25,11 +25,10 @@
     </Description>
     <PackageTags>winforms;treelistview;treegrid;virtual;control;winforms-control;datagrid;treeview;listview</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/yourusername/ModernTreeListView</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/yourusername/ModernTreeListView</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/kushanp/ModernTreeListView</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kushanp/ModernTreeListView</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>icon.png</PackageIcon>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
@@ -41,8 +40,6 @@
     <!-- Include root README and LICENSE in the NuGet package -->
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" Visible="false" />
-    <!-- Placeholder for package icon (add a real icon.png in the project root when available) -->
-    <None Include="..\..\icon.png" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
 </Project>
